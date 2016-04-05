@@ -17,3 +17,4 @@ CLIENT_NAMES = [
 	"Don",
 	"Ellie" ]
 
+LOG_DIR = "./log/"
