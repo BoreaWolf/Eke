@@ -102,7 +102,7 @@ class EkeUser
 				# P
 				client_first_msg[ 3 ] = client_first_msg[ 3 ].to_i
 				# IV
-				client_first_msg[ 4 ] = hex_to_bin( client_first_msg[ 4 ][1..-2] )
+				#client_first_msg[ 4 ] = hex_to_bin( client_first_msg[ 4 ][1..-2] )
 
 				puts "Parsed:"
 				client_first_msg.each{ |x|
@@ -120,12 +120,15 @@ class EkeUser
 				# Deciphering
 				decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
 				decipher.decrypt
+				decipher.padding = 0
 				decipher.key = @key
-				decipher.iv = client_first_msg[ 4 ]
+				#decipher.iv = client_first_msg[ 4 ]
 				puts "Deciphering with: "
 				puts "key: #{@key}"
 				ta = decipher.update( client_first_msg[ 1 ] ) + decipher.final
-				puts "ta: #{ta}"
+				puts "Ta: #{ta}"
+				ta = hex_to
+				puts "Ta2: #{hex_to_bin( ta )} "
 				$stdin.flush
 				@log_file.puts "Ta: #{ta}"
 				@log_file.flush
@@ -304,29 +307,29 @@ class EkeUser
 		cipher.encrypt
 		# SHA-1 of the password, used to encrypt ta
 		key = @key
-		iv = cipher.random_iv
+		# iv = cipher.random_iv
 		
 		# Encrypting data to be sent on the network
 		# NB! Data needs to be a String!
-		enc_ta = cipher.update( ta.to_s ) + cipher.final
+		# NNB! Data needs to be represented as hex!
+		data = ta.to_s
+		data = bin_to_hex( data )
+		enc_ta = cipher.update( data ) + cipher.final
 
-		puts "Enc: #{enc_ta} => #{enc_ta.to_s} (#{enc_ta.class} #{enc_ta.size})"
+		puts "Ta: #{ta} #{ta.class} => #{ta.to_s} #{ta.to_s.class}"
+		puts "Enc: #{enc_ta} (#{enc_ta.class} #{enc_ta.size})"
 		puts "Enc Hex: #{bin_to_hex( enc_ta )}"
-		puts "IV: #{iv} => #{iv.to_s} (#{iv.class} #{iv.size})"
-		puts "IV Hex: #{bin_to_hex( iv )}"
+		#	puts "IV: #{iv} => #{iv.to_s} (#{iv.class} #{iv.size})"
+		#	puts "IV Hex: #{bin_to_hex( iv )}"
 
-		# Creating the first message
-		#	msg = [	# My identity 
-		#	  :name => @name,	
-		#	  # Encrypted ephemeral key part
-		#	  :enc_ta => enc_ta,
-		#	  # A generator of Zp*
-		#	  :g => g,
-		#	  # A random prime number
-		#	  :p => p,
-		#	  # Initialization vector
-		#	  :iv => iv ]
-		msg = [ @name, bin_to_hex( enc_ta ), g, p, bin_to_hex( iv ) ].to_s
+		# Creating the first message:
+		# - My identity 
+		# - Encrypted ephemeral key part
+		# - A generator of Zp*
+		# - A random prime number
+		# - Initialization vector for AES
+		#msg = [ @name, bin_to_hex( enc_ta ), g, p, bin_to_hex( iv ) ].to_s
+		msg = [ @name, bin_to_hex( enc_ta ), g, p ].to_s
 
 		puts "Sending: #{msg}"
 
@@ -356,7 +359,6 @@ class EkeUser
 		puts "0) Close"
 		loop do
 			return_value = to_number( gets.chomp )
-			puts "Read: #{return_value}"
 			if return_value == 0 or return_value == 1 then
 				return return_value
 			end
@@ -373,6 +375,7 @@ class EkeUser
 		msg = msg[1..-3].split( ", " )
 	end
 
+	# Coding and decoding ciphered data
 	def bin_to_hex( s )
 		s.each_byte.map{ |b| "%02x" % b.to_i }.join
 	end
