@@ -9,8 +9,10 @@
 # 
 
 # Imports
-require "socket"
 require "digest/sha1"
+require "openssl" # TODO Check if needed
+require "prime"
+require "socket"
 require_relative "./constants.rb"
 
 class EkeUser
@@ -25,6 +27,9 @@ class EkeUser
 		puts "Creating new EKE User"
 		puts "Insert your name:"
 		@name = gets.chomp
+	
+		# Faster than doing it every time it's needed
+		@key = Digest::SHA1.hexdigest @@password
 
 		@known_clients = Array.new()
 
@@ -74,23 +79,71 @@ class EkeUser
 	 
 		# Waiting for client requests
 		loop{
-			#	client = @listening_socket.accept
-	
-			#	# Taking some information about the incoming request
-			#	( port, ip ) = Socket.unpack_sockaddr_in( client.getpeername )
-			#	puts "Received request from #{ip}:#{port}"
-			#	puts client.gets
 
-			#	#	eke_init() # Only if it's requested
-	
-			#	client.close
+			# Accepting incoming requests with a thread
 			Thread.start( @listening_socket.accept ) do |client|
+				# Reading some info about the client
 				( port, ip ) = Socket.unpack_sockaddr_in( client.getpeername )
-				#	[ $stdout, @log_file ].each{ |x|
+				# Reading the message
+				client_first_msg = client.gets
+
 				@log_file.puts "Received request from #{ip}:#{port}"
-				@log_file.puts "Received #{client.gets}"
+				@log_file.puts "Received #{client_first_msg}"
+				@log_file.flush
+				@log_file.puts "Client msg: #{client_first_msg.class} #{client_first_msg.size}"
+				@log_file.flush
+				@log_file.puts "#{client_first_msg["name"].class}"
 				@log_file.flush
 
+				@log_file.puts "From: #{client_first_msg["name"]}"
+				@log_file.flush
+				@log_file.puts "ta: #{client_first_msg[:enc_ta]}"
+				@log_file.flush
+
+				#	# Deciphering
+				#	decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
+				#	decipher.decrypt
+				#	decipher.key = @key
+				#	decipher.iv = client_first_msg[ :iv ]
+				#	ta = decipher.update( client_first_msg[ :enc_ta ] ) + decipher.final
+				#	@log_file.puts "Ta: #{ta}"
+				#	@log_file.flush
+
+				#	# Random number for challenging the client
+				#	c1 = ( 0..100 ).to_a.sample
+				#	puts "c1: #{c1}"
+				#	# Random number in [ 1, p )
+				#	sb = ( 1..client_first_msg[ :p ]-1 ).to_a.sample
+				#	puts "sb: #{sb}"
+				#	# Other part of the ephemeral key
+				#	tb = ( client_first_msg[ :g ] ** sb ) % client_first_msg[ :p ]
+				#	puts "tb: #{tb}"
+				#	# Final ephemeral key
+				#	ephemeral_key = ( ta ** sb ) % client_first_msg[ :p ]
+				#	puts "eph: #{ephemeral_key}"
+
+				#	# Other ciphering
+
+				#	# Encrypted data for the client
+				#	enc_tb = [	# Second part of the key
+				#				:key_part => cipher( tb.to_s ) + cipher.final,
+				#				# Challenge
+				#				:challenge => cipher( c1.to_s ) + cipher.final ]
+
+				#	msg = [ # My identity
+				#			:name => @name,
+				#			# Encrypted ephemeral key part
+				#			:enc_tb => enc_tb ]
+
+				#	# Answering to the client
+				#	client.puts msg
+
+#	decipher = OpenSSL::Cipher::AES.new(128, :CBC)
+#	decipher.decrypt
+#	decipher.key = key
+#	decipher.iv = iv
+#	
+#	plain = decipher.update(encrypted) + decipher.final
 				#	client.puts "Sbra"
 				#	client.puts "Bye"
 				client.close
@@ -189,11 +242,70 @@ class EkeUser
 
 	def eke_authentication( client_number )
 		puts "Starting authentication with #{@known_clients[ client_number ]}"
+
+		# Opening a socket with the other client
 		socket = TCPSocket.new( @known_clients[ client_number ][ :ip ],
 								@known_clients[ client_number ][ :port ] )
-		socket.puts @name, "sbra", 50
-		w = Digest::SHA1.hexdigest @@password
-		puts "W of #{@@password} = #{w}"
+
+# AES encryption
+#	cipher = OpenSSL::Cipher::AES.new(128, :CBC)
+#	cipher.encrypt
+#	key = cipher.random_key
+#	iv = cipher.random_iv
+#	
+#	encrypted = cipher.update(data) + cipher.final
+#	...
+#	decipher = OpenSSL::Cipher::AES.new(128, :CBC)
+#	decipher.decrypt
+#	decipher.key = key
+#	decipher.iv = iv
+#	
+#	plain = decipher.update(encrypted) + decipher.final
+
+		puts "Socket open"
+		
+		# Diffie-Hellman parameters
+		# Random prime number
+		p = Prime.first( PRIME_LIST_SIZE ).sample
+		# Random number in [ 1, p )
+		sa = ( 1..p-1 ).to_a.sample
+		# A generator of Zp* TODO
+		g = 7
+		# Part of the temporary key
+		ta = ( g ** sa ) % p
+
+		# AES Encryption on 128 bit key and Cipher Block Chaining block cipher
+		# mode
+		cipher = OpenSSL::Cipher::AES.new( 128, :CBC )
+		cipher.encrypt
+		# SHA-1 of the password, used to encrypt ta
+		key = @key
+		iv = cipher.random_iv
+		
+		# Encrypting data to be sent on the network
+		# NB! Data needs to be a String!
+		enc_ta = cipher.update( ta.to_s ) + cipher.final
+
+		# Creating the first message
+		msg = {	# My identity 
+				:name => @name,	
+				# Encrypted ephemeral key part
+				:enc_ta => enc_ta,
+				# A generator of Zp*
+				:g => g,
+				# A random prime number
+				:p => p,
+				# Initialization vector
+				:ip => iv }
+
+		puts "Sending: #{msg}"
+
+		# Sending the message
+		socket.puts msg
+
+		# Waiting for his response
+		#	server_first_msg = socket.gets
+		#	puts "Received: #{server_first_msg}"
 	end
 
 	def close()

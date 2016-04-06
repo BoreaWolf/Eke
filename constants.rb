@@ -18,3 +18,4 @@ CLIENT_NAMES = [
 	"Ellie" ]
 
 LOG_DIR = "./log/"
+PRIME_LIST_SIZE = 1000
