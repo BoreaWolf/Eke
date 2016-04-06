@@ -90,52 +90,76 @@ class EkeUser
 				@log_file.puts "Received request from #{ip}:#{port}"
 				@log_file.puts "Received #{client_first_msg}"
 				@log_file.flush
-				@log_file.puts "Client msg: #{client_first_msg.class} #{client_first_msg.size}"
+
+				# Reading all data
+				client_first_msg = parse_message( client_first_msg )
+				# Name
+				client_first_msg[ 0 ] = client_first_msg[ 0 ][1..-2]
+				# Enc Ta
+				client_first_msg[ 1 ] = hex_to_bin( client_first_msg[ 1 ][1..-2] )
+				# G
+				client_first_msg[ 2 ] = client_first_msg[ 2 ].to_i
+				# P
+				client_first_msg[ 3 ] = client_first_msg[ 3 ].to_i
+				# IV
+				client_first_msg[ 4 ] = hex_to_bin( client_first_msg[ 4 ][1..-2] )
+
+				puts "Parsed:"
+				client_first_msg.each{ |x|
+					puts "#{x} #{x.size} #{x.class}"
+				}
+
+				#	puts "Parsed:"
+				#	puts "Name: #{client_first_msg[0][1..-2]} #{client_first_msg[0].size}"
+				#	puts "Enc: #{hex_to_bin( client_first_msg[1][1..-2] )} #{client_first_msg[1].size}"
+				#	puts "G: #{client_first_msg[2]} #{client_first_msg[2].class}"
+				#	puts "P: #{client_first_msg[3]} #{client_first_msg[3].class}"
+				#	puts "IV: #{hex_to_bin( client_first_msg[4][1..-2] )} #{client_first_msg[4].size}"
 				@log_file.flush
-				@log_file.puts "#{client_first_msg["name"].class}"
+
+				# Deciphering
+				decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
+				decipher.decrypt
+				decipher.key = @key
+				decipher.iv = client_first_msg[ 4 ]
+				puts "Deciphering with: "
+				puts "key: #{@key}"
+				ta = decipher.update( client_first_msg[ 1 ] ) + decipher.final
+				puts "ta: #{ta}"
+				$stdin.flush
+				@log_file.puts "Ta: #{ta}"
 				@log_file.flush
 
-				@log_file.puts "From: #{client_first_msg["name"]}"
+				# Random number for challenging the client
+				c1 = ( 0..100 ).to_a.sample
+				puts "c1: #{c1}"
+				# Random number in [ 1, p )
+				sb = ( 1..client_first_msg[3]-1 ).to_a.sample
+				puts "sb: #{sb}"
+				# Other part of the ephemeral key
+				tb = ( client_first_msg[2] ** sb ) % client_first_msg[3]
+				puts "tb: #{tb}"
+				# Final ephemeral key
+				ephemeral_key = ( ta ** sb ) % client_first_msg[3]
+				puts "eph: #{ephemeral_key}"
+
+				# Other ciphering
+
+				# Encrypted data for the client
+				enc_tb = [	# Second part of the key
+							:key_part => cipher( tb.to_s ) + cipher.final,
+							# Challenge
+							:challenge => cipher( c1.to_s ) + cipher.final ]
+
+				msg = [ # My identity
+						:name => @name,
+						# Encrypted ephemeral key part
+						:enc_tb => enc_tb ]
+
+				@log_file.puts msg
 				@log_file.flush
-				@log_file.puts "ta: #{client_first_msg[:enc_ta]}"
-				@log_file.flush
 
-				#	# Deciphering
-				#	decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
-				#	decipher.decrypt
-				#	decipher.key = @key
-				#	decipher.iv = client_first_msg[ :iv ]
-				#	ta = decipher.update( client_first_msg[ :enc_ta ] ) + decipher.final
-				#	@log_file.puts "Ta: #{ta}"
-				#	@log_file.flush
-
-				#	# Random number for challenging the client
-				#	c1 = ( 0..100 ).to_a.sample
-				#	puts "c1: #{c1}"
-				#	# Random number in [ 1, p )
-				#	sb = ( 1..client_first_msg[ :p ]-1 ).to_a.sample
-				#	puts "sb: #{sb}"
-				#	# Other part of the ephemeral key
-				#	tb = ( client_first_msg[ :g ] ** sb ) % client_first_msg[ :p ]
-				#	puts "tb: #{tb}"
-				#	# Final ephemeral key
-				#	ephemeral_key = ( ta ** sb ) % client_first_msg[ :p ]
-				#	puts "eph: #{ephemeral_key}"
-
-				#	# Other ciphering
-
-				#	# Encrypted data for the client
-				#	enc_tb = [	# Second part of the key
-				#				:key_part => cipher( tb.to_s ) + cipher.final,
-				#				# Challenge
-				#				:challenge => cipher( c1.to_s ) + cipher.final ]
-
-				#	msg = [ # My identity
-				#			:name => @name,
-				#			# Encrypted ephemeral key part
-				#			:enc_tb => enc_tb ]
-
-				#	# Answering to the client
+				# Answering to the client
 				#	client.puts msg
 
 #	decipher = OpenSSL::Cipher::AES.new(128, :CBC)
@@ -286,17 +310,23 @@ class EkeUser
 		# NB! Data needs to be a String!
 		enc_ta = cipher.update( ta.to_s ) + cipher.final
 
+		puts "Enc: #{enc_ta} => #{enc_ta.to_s} (#{enc_ta.class} #{enc_ta.size})"
+		puts "Enc Hex: #{bin_to_hex( enc_ta )}"
+		puts "IV: #{iv} => #{iv.to_s} (#{iv.class} #{iv.size})"
+		puts "IV Hex: #{bin_to_hex( iv )}"
+
 		# Creating the first message
-		msg = {	# My identity 
-				:name => @name,	
-				# Encrypted ephemeral key part
-				:enc_ta => enc_ta,
-				# A generator of Zp*
-				:g => g,
-				# A random prime number
-				:p => p,
-				# Initialization vector
-				:ip => iv }
+		#	msg = [	# My identity 
+		#	  :name => @name,	
+		#	  # Encrypted ephemeral key part
+		#	  :enc_ta => enc_ta,
+		#	  # A generator of Zp*
+		#	  :g => g,
+		#	  # A random prime number
+		#	  :p => p,
+		#	  # Initialization vector
+		#	  :iv => iv ]
+		msg = [ @name, bin_to_hex( enc_ta ), g, p, bin_to_hex( iv ) ].to_s
 
 		puts "Sending: #{msg}"
 
@@ -337,6 +367,19 @@ class EkeUser
 		num = string.to_i
 		num if num.to_s == string
 	end
+
+	# Splitting the string into an array
+	def parse_message( msg )
+		msg = msg[1..-3].split( ", " )
+	end
+
+	def bin_to_hex( s )
+		s.each_byte.map{ |b| "%02x" % b.to_i }.join
+	end
+
+	def hex_to_bin( s )
+		s.scan( /../ ).map{ |x| x.hex }.pack( 'c*' )
+	end 
 end
 
 #	def random_name()
