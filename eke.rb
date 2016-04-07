@@ -20,13 +20,12 @@ class EkeUser
 	# Useful struct
 	User = Struct.new( :ip, :port, :name )
 
-	# ...
+	# Shared password
 	@@password = "NetworkSecurity"
 
-	def initialize()
-		puts "Creating new EKE User"
-		puts "Insert your name:"
-		@name = gets.chomp
+	def initialize( name )
+		puts "Creating new EKE User '#{name}'"
+		@name = name
 	
 		# Faster than doing it every time it's needed
 		@key = Digest::SHA1.hexdigest( @@password )
@@ -45,8 +44,6 @@ class EkeUser
 		# Creating the server socket on a port
 		# Trying to find the first available port
 	
-		#	hostname = socket.gethostname()
-		#	hostname = "127.0.0.1"
 		@ip = "localhost"
 		@server_port = -1
 
@@ -117,16 +114,14 @@ class EkeUser
 				puts "Ta: #{ta}"
 
 				# Random number for challenging the client
-				#	c1 = ( 0..100 ).to_a.sample
 				c1 = Random.new.rand( MAX_RANDOM_VALUE )
 				puts "c1: #{c1}"
 				# Random number in [ 1, p ), as for Sa
-				#	sb = ( 1..client_first_msg[3]-1 ).to_a.sample
 				sb = Random.new.rand( client_first_msg[ 3 ]-2 ) + 1
 				# Other part of the ephemeral key
-				tb = ( client_first_msg[2] ** sb ) % client_first_msg[3]
+				tb = ( client_first_msg[ 2 ] ** sb ) % client_first_msg[ 3 ]
 				# Final ephemeral key
-				ephemeral_key = ( ta ** sb ) % client_first_msg[3]
+				ephemeral_key = ( ta ** sb ) % client_first_msg[ 3 ]
 				puts "Eph: #{ephemeral_key}"
 
 				# Other ciphering
@@ -202,8 +197,7 @@ class EkeUser
 					cipher_eph.key = eph_key_digest
 
 					data = [ c2.to_s ].to_s
-					puts "Ciphering with ephemeral key #{data}"
-					$stdin.flush
+					puts "Sending last challenge: #{data}"
 					enc_data = cipher_eph.update( data ) + cipher_eph.final
 
 					# Creating the message for the mutual authentication
@@ -214,6 +208,8 @@ class EkeUser
 
 					client.puts msg
 
+					puts "EKE authentication succeeded with #{client_first_msg[ 0 ]}"
+					$stdin.flush
 					@log_file.puts "EKE authentication succeeded with #{ip}:#{port}(#{client_first_msg[ 0 ]})"
 					@log_file.flush
 				end
@@ -222,16 +218,6 @@ class EkeUser
 				client.close
 			end
 		}
-
-# Another way to loop, instead of the while
-#		loop
-#		{
-#			Thread.start(server.accept) do |client|
-#				client.puts(Time.now.ctime) # Send the time to the client
-#				client.puts "Closing the connection. Bye!"
-#				client.close                # Disconnect from the client
-#			end
-#		}
 	end
 	
 	def client_socket()
@@ -244,17 +230,6 @@ class EkeUser
 			end
 			break if user_choice == 0
 		end
-
-		#	s = Socket.new( :INET, :STREAM, 0 )
-		#	# TODO: Fix this to be dynamic
-		#	# Setting up the connection to the server
-		#	hostname = socket.gethostname()
-		#	client_port = server_port_range[ 0 ]
-	
-		#	puts "Client connecting to #{hostname}:#{client_port}"
-		#	
-		#	s.connect( Socket.sockaddr_in( client_port, hostname ) )
-		#	s.close 
 	end
 
 	def scan_for_clients()
@@ -285,7 +260,7 @@ class EkeUser
 			loop do
 				puts "Choose a client by its number:"
 				print_clients_list()
-				return_value = to_number( gets.chomp )
+				return_value = to_number( $stdin.gets.chomp )
 				if return_value >= 0 and return_value < @known_clients.size then
 					return return_value
 				end
@@ -330,7 +305,6 @@ class EkeUser
 		#    * p-1 because i don't want p to be chosen
 		#    * -1 because the random could give 0 as result and i don't want it,
 		#      so i'll add 1 after, but i could get again p in this way
-		#	sa = ( 1..p-1 ).to_a.sample
 		sa = Random.new.rand( p-2 ) + 1
 		# A generator of Zp* TODO
 		g = 7
@@ -465,7 +439,7 @@ class EkeUser
 		puts "1) EKE"
 		puts "0) Close"
 		loop do
-			return_value = to_number( gets.chomp )
+			return_value = to_number( $stdin.gets.chomp )
 			if return_value == 0 or return_value == 1 then
 				return return_value
 			end
@@ -492,23 +466,19 @@ class EkeUser
 	end 
 end
 
-#	def random_name()
-#		(0..(rand(7)+3)).map{ ('a'..'z').to_a.sample }.join.capitalize
-#	end
+def random_name()
+	(0..(rand(7)+3)).map{ ('a'..'z').to_a.sample }.join.capitalize
+end
 
 # Creating a new Eke user
-#	name = ""
-#	if ARGV[ 0 ].class == NilClass then
-#		name = random_name()
-#	else
-#		name = ARGV[ 0 ].dup
-#	end
-#	
-#	puts "#{ARGV}"
-#	
-#	puts "Before: '#{name}' #{name.class}"
+name = ""
+if ARGV[ 0 ].class == NilClass then
+	name = random_name()
+else
+	name = ARGV[ 0 ]
+end
 
-EkeUser.new()
+EkeUser.new( name )
 
 print "٩(๑❛ワ❛๑)و"
 
