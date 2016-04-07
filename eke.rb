@@ -10,7 +10,7 @@
 
 # Imports
 require "digest/sha1"
-require "openssl" # TODO Check if needed
+require "openssl"
 require "prime"
 require "socket"
 require_relative "./constants.rb"
@@ -29,7 +29,7 @@ class EkeUser
 		@name = gets.chomp
 	
 		# Faster than doing it every time it's needed
-		@key = Digest::SHA1.hexdigest @@password
+		@key = Digest::SHA1.hexdigest( @@password )
 
 		@known_clients = Array.new()
 
@@ -87,8 +87,8 @@ class EkeUser
 				# Reading the message
 				client_first_msg = client.gets
 
-				@log_file.puts "Received request from #{ip}:#{port}"
-				@log_file.puts "Received #{client_first_msg}"
+				puts "*** First message ***"
+				@log_file.puts "Received #{ip}:#{port}: #{client_first_msg}"
 				@log_file.flush
 
 				# Reading all data
@@ -102,77 +102,123 @@ class EkeUser
 				# P
 				client_first_msg[ 3 ] = client_first_msg[ 3 ].to_i
 				# IV
-				#client_first_msg[ 4 ] = hex_to_bin( client_first_msg[ 4 ][1..-2] )
-
-				puts "Parsed:"
-				client_first_msg.each{ |x|
-					puts "#{x} #{x.size} #{x.class}"
-				}
-
-				#	puts "Parsed:"
-				#	puts "Name: #{client_first_msg[0][1..-2]} #{client_first_msg[0].size}"
-				#	puts "Enc: #{hex_to_bin( client_first_msg[1][1..-2] )} #{client_first_msg[1].size}"
-				#	puts "G: #{client_first_msg[2]} #{client_first_msg[2].class}"
-				#	puts "P: #{client_first_msg[3]} #{client_first_msg[3].class}"
-				#	puts "IV: #{hex_to_bin( client_first_msg[4][1..-2] )} #{client_first_msg[4].size}"
-				@log_file.flush
+				client_first_msg[ 4 ] = hex_to_bin( client_first_msg[ 4 ][1..-2] )
 
 				# Deciphering
 				decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
 				decipher.decrypt
 				decipher.padding = 0
 				decipher.key = @key
-				#decipher.iv = client_first_msg[ 4 ]
-				puts "Deciphering with: "
-				puts "key: #{@key}"
+				decipher.iv = client_first_msg[ 4 ]
+
+				# Deciphering the data and transforming it into a number
 				ta = decipher.update( client_first_msg[ 1 ] ) + decipher.final
+				ta = ta.to_i
 				puts "Ta: #{ta}"
-				ta = hex_to
-				puts "Ta2: #{hex_to_bin( ta )} "
-				$stdin.flush
-				@log_file.puts "Ta: #{ta}"
-				@log_file.flush
 
 				# Random number for challenging the client
-				c1 = ( 0..100 ).to_a.sample
+				#	c1 = ( 0..100 ).to_a.sample
+				c1 = Random.new.rand( MAX_RANDOM_VALUE )
 				puts "c1: #{c1}"
-				# Random number in [ 1, p )
-				sb = ( 1..client_first_msg[3]-1 ).to_a.sample
-				puts "sb: #{sb}"
+				# Random number in [ 1, p ), as for Sa
+				#	sb = ( 1..client_first_msg[3]-1 ).to_a.sample
+				sb = Random.new.rand( client_first_msg[ 3 ]-2 ) + 1
 				# Other part of the ephemeral key
 				tb = ( client_first_msg[2] ** sb ) % client_first_msg[3]
-				puts "tb: #{tb}"
 				# Final ephemeral key
 				ephemeral_key = ( ta ** sb ) % client_first_msg[3]
-				puts "eph: #{ephemeral_key}"
+				puts "Eph: #{ephemeral_key}"
 
 				# Other ciphering
+				cipher = OpenSSL::Cipher::AES.new( 128, :CBC )
+				cipher.encrypt
+				cipher.key = @key
+				iv = cipher.random_iv
+				cipher.iv = iv
 
-				# Encrypted data for the client
-				enc_tb = [	# Second part of the key
-							:key_part => cipher( tb.to_s ) + cipher.final,
-							# Challenge
-							:challenge => cipher( c1.to_s ) + cipher.final ]
+				# Data to encrypt:
+				#  - partial ephemeral key
+				#  - challenge
+				data = [ tb.to_s, c1.to_s ].to_s
+				puts "Data: #{data}"
 
+				# Encrypting
+				enc_data = cipher.update( data ) + cipher.final
+
+				# Message
 				msg = [ # My identity
-						:name => @name,
-						# Encrypted ephemeral key part
-						:enc_tb => enc_tb ]
+						@name,
+						# Encrypted data
+						bin_to_hex( enc_data ),
+						# IV
+						bin_to_hex( iv ) ].to_s
 
-				@log_file.puts msg
+				puts "Sending #{msg}"
+				@log_file.puts "Sending #{ip}:#{port}(#{client_first_msg[ 0 ]}): #{msg}"
 				@log_file.flush
 
 				# Answering to the client
-				#	client.puts msg
+				client.puts msg
+				# Waiting for the answer with the challenge
+				client_second_msg = client.gets
+				puts "*** Second message ***"
+				@log_file.puts "Received #{ip}:#{port}: #{client_second_msg}"
+				@log_file.flush
 
-#	decipher = OpenSSL::Cipher::AES.new(128, :CBC)
-#	decipher.decrypt
-#	decipher.key = key
-#	decipher.iv = iv
-#	
-#	plain = decipher.update(encrypted) + decipher.final
-				#	client.puts "Sbra"
-				#	client.puts "Bye"
+				# Parsing th message
+				client_second_msg = parse_message( client_second_msg )
+				client_second_msg[ 0 ] = hex_to_bin( client_second_msg[ 0 ][1..-2] )
+
+				# Deciphering with the ephemeral key
+				eph_key_digest = Digest::SHA1.hexdigest( ephemeral_key.to_s )
+				decipher_eph = OpenSSL::Cipher::AES.new( 128, :CBC )
+				decipher_eph.decrypt
+				decipher_eph.padding = 0
+				decipher_eph.key = eph_key_digest
+
+				# Decrypting data
+				data = decipher_eph.update( client_second_msg[ 0 ] ) + decipher_eph.final
+				data = parse_message( data.slice( 0..(data.index( ']' )+1 ) ) )
+				# Challenge C1
+				data[ 0 ] = data[ 0 ][1..-2].to_i
+				# Challenge C2
+				c2 = data[ 1 ][1..-2].to_i
+
+				puts "Received challenges:"
+				puts "c1: #{data[ 0 ]}"
+				puts "c2: #{c2}"
+				$stdin.flush
+
+				# Checking the challenge
+				if data[ 0 ] != c1 then
+					[ $stdin, @log_file ].each{ |x|
+						x.puts "EKE authentication failed: Challenge failed with #{ip}:#{port}(#{client_first_msg[ 0 ]}): #{c1} != #{data[ 0 ]}"
+						x.flush
+					}
+				else
+					# Answering the client with his challenge
+					cipher_eph = OpenSSL::Cipher::AES.new( 128, :CBC )
+					cipher_eph.encrypt
+					cipher_eph.key = eph_key_digest
+
+					data = [ c2.to_s ].to_s
+					puts "Ciphering with ephemeral key #{data}"
+					$stdin.flush
+					enc_data = cipher_eph.update( data ) + cipher_eph.final
+
+					# Creating the message for the mutual authentication
+					msg = [ bin_to_hex( enc_data ) ].to_s
+
+					@log_file.puts "Sending #{ip}:#{port}(#{client_first_msg[ 0 ]}): #{msg}"
+					@log_file.flush
+
+					client.puts msg
+
+					@log_file.puts "EKE authentication succeeded with #{ip}:#{port}(#{client_first_msg[ 0 ]})"
+					@log_file.flush
+				end
+
+				# Closing the connection with the client
 				client.close
 			end
 		}
@@ -274,28 +320,18 @@ class EkeUser
 		socket = TCPSocket.new( @known_clients[ client_number ][ :ip ],
 								@known_clients[ client_number ][ :port ] )
 
-# AES encryption
-#	cipher = OpenSSL::Cipher::AES.new(128, :CBC)
-#	cipher.encrypt
-#	key = cipher.random_key
-#	iv = cipher.random_iv
-#	
-#	encrypted = cipher.update(data) + cipher.final
-#	...
-#	decipher = OpenSSL::Cipher::AES.new(128, :CBC)
-#	decipher.decrypt
-#	decipher.key = key
-#	decipher.iv = iv
-#	
-#	plain = decipher.update(encrypted) + decipher.final
-
-		puts "Socket open"
+		puts "*** First message ***"
 		
 		# Diffie-Hellman parameters
 		# Random prime number
 		p = Prime.first( PRIME_LIST_SIZE ).sample
-		# Random number in [ 1, p )
-		sa = ( 1..p-1 ).to_a.sample
+		# Random number in [ 1, p ):
+		#  - p-2:
+		#    * p-1 because i don't want p to be chosen
+		#    * -1 because the random could give 0 as result and i don't want it,
+		#      so i'll add 1 after, but i could get again p in this way
+		#	sa = ( 1..p-1 ).to_a.sample
+		sa = Random.new.rand( p-2 ) + 1
 		# A generator of Zp* TODO
 		g = 7
 		# Part of the temporary key
@@ -306,21 +342,16 @@ class EkeUser
 		cipher = OpenSSL::Cipher::AES.new( 128, :CBC )
 		cipher.encrypt
 		# SHA-1 of the password, used to encrypt ta
-		key = @key
-		# iv = cipher.random_iv
+		cipher.key = @key
+		iv = cipher.random_iv
+		cipher.iv = iv
 		
 		# Encrypting data to be sent on the network
 		# NB! Data needs to be a String!
-		# NNB! Data needs to be represented as hex!
 		data = ta.to_s
-		data = bin_to_hex( data )
 		enc_ta = cipher.update( data ) + cipher.final
 
-		puts "Ta: #{ta} #{ta.class} => #{ta.to_s} #{ta.to_s.class}"
-		puts "Enc: #{enc_ta} (#{enc_ta.class} #{enc_ta.size})"
-		puts "Enc Hex: #{bin_to_hex( enc_ta )}"
-		#	puts "IV: #{iv} => #{iv.to_s} (#{iv.class} #{iv.size})"
-		#	puts "IV Hex: #{bin_to_hex( iv )}"
+		puts "Ta: #{ta}"
 
 		# Creating the first message:
 		# - My identity 
@@ -328,8 +359,7 @@ class EkeUser
 		# - A generator of Zp*
 		# - A random prime number
 		# - Initialization vector for AES
-		#msg = [ @name, bin_to_hex( enc_ta ), g, p, bin_to_hex( iv ) ].to_s
-		msg = [ @name, bin_to_hex( enc_ta ), g, p ].to_s
+		msg = [ @name, bin_to_hex( enc_ta ), g, p, bin_to_hex( iv ) ].to_s
 
 		puts "Sending: #{msg}"
 
@@ -337,8 +367,85 @@ class EkeUser
 		socket.puts msg
 
 		# Waiting for his response
-		#	server_first_msg = socket.gets
-		#	puts "Received: #{server_first_msg}"
+		server_first_msg = socket.gets
+		puts "*** Second message ***"
+		puts "Received: #{server_first_msg}"
+
+		# Reading data
+		server_first_msg = parse_message( server_first_msg )
+		# Name
+		server_first_msg[ 0 ] = server_first_msg[ 0 ][1..-2]
+		# Enc data
+		server_first_msg[ 1 ] = hex_to_bin( server_first_msg[ 1 ][1..-2] )
+		# IV
+		server_first_msg[ 2 ] = hex_to_bin( server_first_msg[ 2 ][1..-2] )
+
+		# Decrypting
+		decipher = OpenSSL::Cipher::AES.new( 128, :CBC )
+		decipher.decrypt
+		decipher.padding = 0
+		decipher.key = @key
+		decipher.iv = server_first_msg[ 2 ]
+
+		# Deciphering the data and transforming it into a number
+		data = decipher.update( server_first_msg[ 1 ] ) + decipher.final
+		# Truncating what is meaningless from the decrypted data
+		data = parse_message( data.slice( 0..( data.index( ']' )+1 ) ) )
+		# Tb
+		data[ 0 ] = data[ 0 ][1..-2].to_i
+		# Challenge C1
+		data[ 1 ] = data[ 1 ][1..-2].to_i
+
+		puts "c1: #{data[ 1 ]}"
+
+		# Constructing the ephemeral key
+		ephemeral_key = ( data[ 0 ] ** sa ) % p
+		puts "Eph: #{ephemeral_key}"
+		# Challenge
+		c2 = Random.new.rand( MAX_RANDOM_VALUE )
+		puts "c2: #{c2}"
+
+		# Encrypting data with the ephemeral key
+		eph_key_digest = Digest::SHA1.hexdigest( ephemeral_key.to_s )
+		cipher_eph = OpenSSL::Cipher::AES.new( 128, :CBC )
+		cipher_eph.encrypt
+		cipher_eph.key = eph_key_digest
+
+		data = [ data[ 1 ].to_s, c2.to_s ].to_s
+		puts "Sending Challenge: #{data}"
+		enc_data = cipher_eph.update( data ) + cipher_eph.final
+
+		# Sending the challenge encrypted
+		socket.puts [ bin_to_hex( enc_data ) ].to_s
+		# Waiting for the challenge response
+		server_second_msg = socket.gets
+		puts "Received: #{server_second_msg}"
+
+		server_second_msg = parse_message( server_second_msg )
+		server_second_msg[ 0 ] = hex_to_bin( server_second_msg[ 0 ][1..-2] )
+
+		decipher_eph = OpenSSL::Cipher::AES.new( 128, :CBC )
+		decipher_eph.decrypt
+		decipher_eph.padding = 0
+		decipher_eph.key = eph_key_digest
+
+		# Decrypting last challenge
+		data = decipher_eph.update( server_second_msg[ 0 ] ) + decipher_eph.final
+		data = parse_message( data.slice( 0..(data.index( ']' )+1 ) ) )
+		# Challenge C2
+		data[ 0 ] = data[ 0 ][1..-2].to_i
+		puts "Challenge: #{data}"
+
+		# Checking the challenge
+		if data[ 0 ] != c2 then
+			puts "EKE authentication failed: Challenge failed with #{ip}:#{port}(#{server_first_msg[ 0 ]}): #{c1} != #{data[ 0 ]}"
+			$stdin.flush
+		else
+			puts "EKE authentication succeeded with #{server_first_msg[ 0 ]}"
+		end
+
+		# Closing the connection
+		socket.close
 	end
 
 	def close()
