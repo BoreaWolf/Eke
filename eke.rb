@@ -306,8 +306,8 @@ class EkeUser
 		#    * -1 because the random could give 0 as result and i don't want it,
 		#      so i'll add 1 after, but i could get again p in this way
 		sa = Random.new.rand( p-2 ) + 1
-		# A generator of Zp* TODO
-		g = 7
+		# A generator of Zp*
+		g = zn_generator( p )
 		# Part of the temporary key
 		ta = ( g ** sa ) % p
 
@@ -456,7 +456,8 @@ class EkeUser
 		msg = msg[1..-3].split( ", " )
 	end
 
-	# Coding and decoding ciphered data
+	# Transforming data into hex and back, in this way only hex data travels on
+	# the network
 	def bin_to_hex( s )
 		s.each_byte.map{ |b| "%02x" % b.to_i }.join
 	end
@@ -464,6 +465,37 @@ class EkeUser
 	def hex_to_bin( s )
 		s.scan( /../ ).map{ |x| x.hex }.pack( 'c*' )
 	end 
+
+	# Computing zn* set: set of all numbers mod n relatively primes to n
+	def zn_star( n )
+		# Starting with zn
+		zn = (1..n-1).to_a
+		zn_star = zn.map{ |x| x.gcd( n ) == 1 ? x : 0 }
+		zn_star.delete( 0 )
+		return zn_star
+	end
+	
+	# A number that generates the same Zn* of n
+	# g: ( g ** k ) % n = Zn*( n )
+	# having k = { 1..n-1 }
+	# Permutations of Zn* are correct too
+	def zn_generator( n )
+		zn_star = zn_star( n )
+		g = 1
+		# Looking for the generator, going through a loop until I find one that
+		# raised to the sequence {1..n-1} gives the same set of Zn*
+		loop {
+			# Current set
+			result = (1..n-1).to_a.map{ |exp| ( g ** exp ) % n }.sort
+	
+			# Stopping the procedure if the sets are equal
+			break if result == zn_star
+	
+			# Increasing the generator
+			g += 1
+		}
+		return g
+	end
 end
 
 def random_name()
@@ -480,5 +512,5 @@ end
 
 EkeUser.new( name )
 
-print "٩(๑❛ワ❛๑)و"
+puts "٩(๑❛ワ❛๑)و"
 
