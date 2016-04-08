@@ -23,12 +23,19 @@ class EkeUser
 	# Shared password
 	@@password = "NetworkSecurity"
 
-	def initialize( name )
+	def initialize( name, pwd )
 		puts "Creating new EKE User '#{name}'"
+
+		# Setting name and passwords received
 		@name = name
+		if pwd == "" then
+			@pwd = @@password
+		else
+			@pwd = pwd
+		end
 	
 		# Faster than doing it every time it's needed
-		@key = Digest::SHA1.hexdigest( @@password )
+		@key = Digest::SHA1.hexdigest( @pwd )
 
 		@known_clients = Array.new()
 
@@ -84,12 +91,27 @@ class EkeUser
 				# Reading the message
 				client_first_msg = client.gets
 
+				# Null message: recognition message
+				if client_first_msg.class == NilClass then
+					client.close
+					return
+				end
+
 				puts "*** First message ***"
+				puts "Msg: '#{client_first_msg}' #{client_first_msg.class}"
 				@log_file.puts "Received #{ip}:#{port}: #{client_first_msg}"
 				@log_file.flush
 
 				# Reading all data
 				client_first_msg = parse_message( client_first_msg )
+
+				# Checking the message size
+				if client_first_msg.size != 5 then
+					puts "ERROR: Cannot parse first message correctly"
+					client.close
+					return
+				end
+
 				# Name
 				client_first_msg[ 0 ] = client_first_msg[ 0 ][1..-2]
 				# Enc Ta
@@ -160,8 +182,22 @@ class EkeUser
 				@log_file.puts "Received #{ip}:#{port}: #{client_second_msg}"
 				@log_file.flush
 
+				# Checking if I actually received something
+				if client_second_msg.class == NilClass then
+					client.close
+					return
+				end
+
 				# Parsing th message
 				client_second_msg = parse_message( client_second_msg )
+				
+				# Checking the message size
+				if client_second_msg.size != 1 then
+					puts "ERROR: Cannot parse second message correctly"
+					client.close
+					return
+				end
+
 				client_second_msg[ 0 ] = hex_to_bin( client_second_msg[ 0 ][1..-2] )
 
 				# Deciphering with the ephemeral key
@@ -174,6 +210,14 @@ class EkeUser
 				# Decrypting data
 				data = decipher_eph.update( client_second_msg[ 0 ] ) + decipher_eph.final
 				data = parse_message( data.slice( 0..(data.index( ']' )+1 ) ) )
+
+				# Checking the message size
+				if data.size != 2 then
+					puts "ERROR: Cannot decipher challenges correctly"
+					client.close
+					return
+				end
+
 				# Challenge C1
 				data[ 0 ] = data[ 0 ][1..-2].to_i
 				# Challenge C2
@@ -347,6 +391,14 @@ class EkeUser
 
 		# Reading data
 		server_first_msg = parse_message( server_first_msg )
+
+		# Checking the message size
+		if server_first_msg.size != 3 then
+			puts "ERROR: Cannot parse first message correctly"
+			socket.close
+			return
+		end
+
 		# Name
 		server_first_msg[ 0 ] = server_first_msg[ 0 ][1..-2]
 		# Enc data
@@ -363,8 +415,24 @@ class EkeUser
 
 		# Deciphering the data and transforming it into a number
 		data = decipher.update( server_first_msg[ 1 ] ) + decipher.final
+
+		# Checking for any problems with the deciphering
+		if data.index( ']' ) == nil or data.index( '[' ) == nil then
+			puts "ERROR: Cannot decipher correctly the challenge"
+			socket.close
+			return
+		end
+
 		# Truncating what is meaningless from the decrypted data
 		data = parse_message( data.slice( 0..( data.index( ']' )+1 ) ) )
+
+		# I should be able to retrieve two elements from the data
+		if data.size != 2 then
+			puts "ERROR: Cannot decipher correctly the challenge"
+			socket.close
+			return
+		end
+
 		# Tb
 		data[ 0 ] = data[ 0 ][1..-2].to_i
 		# Challenge C1
@@ -396,6 +464,14 @@ class EkeUser
 		puts "Received: #{server_second_msg}"
 
 		server_second_msg = parse_message( server_second_msg )
+		
+		# Checking the message size
+		if server_second_msg.size != 1 then
+			puts "ERROR: Cannot parse second message correctly"
+			socket.close
+			return
+		end
+
 		server_second_msg[ 0 ] = hex_to_bin( server_second_msg[ 0 ][1..-2] )
 
 		decipher_eph = OpenSSL::Cipher::AES.new( 128, :CBC )
@@ -406,6 +482,14 @@ class EkeUser
 		# Decrypting last challenge
 		data = decipher_eph.update( server_second_msg[ 0 ] ) + decipher_eph.final
 		data = parse_message( data.slice( 0..(data.index( ']' )+1 ) ) )
+
+		# Checking the message size
+		if data.size != 1 then
+			puts "ERROR: Cannot decipher last challenge correctly"
+			socket.close
+			return
+		end
+
 		# Challenge C2
 		data[ 0 ] = data[ 0 ][1..-2].to_i
 		puts "Challenge: #{data}"
@@ -453,7 +537,13 @@ class EkeUser
 
 	# Splitting the string into an array
 	def parse_message( msg )
-		msg = msg[1..-3].split( ", " )
+		#puts "Parsing: #{msg} #{msg.index( ", ")}"
+		#if msg.index( ", " ) != nil then
+			msg = msg[1..-3].split( ", " )
+		#else
+		#	msg = nil
+		#end
+		#return msg
 	end
 
 	# Transforming data into hex and back, in this way only hex data travels on
@@ -503,6 +593,7 @@ def random_name()
 end
 
 # Creating a new Eke user
+# Name of the user
 name = ""
 if ARGV[ 0 ].class == NilClass then
 	name = random_name()
@@ -510,7 +601,13 @@ else
 	name = ARGV[ 0 ]
 end
 
-EkeUser.new( name )
+# Password shared between clients
+pwd = ""
+if ARGV[ 1 ].class != NilClass then
+	pwd = ARGV[ 1 ]
+end
+
+EkeUser.new( name, pwd )
 
 puts "٩(๑❛ワ❛๑)و"
 

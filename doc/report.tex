@@ -1,0 +1,283 @@
+% Riccardo Orizio
+% 7 January 2016
+% Description of the quality factor of every solution
+
+\documentclass[10pt, letterpaper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{mathtools}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{color,soul}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage{graphicx}
+\graphicspath{ {../images/} }
+\usepackage{float}
+
+% Every list item will start with a dash instead of a dot
+% \def\labelitemi{--}
+
+% Personal commands
+% Highlighting text with different colors
+\newcommand{\hlc}[2]{\sethlcolor{#1} \hl{#2}}
+\newcommand{\news}[1]{\hlc{green}{#1}}
+\newcommand{\todelete}[1]{\hlc{red}{#1}}
+\newcommand{\extras}[1]{\newline\fbox{\parbox{\textwidth}{\hlc{orange}{#1}}}\newline}
+\newcommand{\todo}[1]{\hlc{Emerald}{TODO:#1}}
+
+\title{Quality Factors and Incentives}
+\author{Riccardo Orizio}
+\date{7 January 2016}
+
+\begin{document}
+
+\maketitle
+
+\section{Abstract}
+Description of Quality Factors, Solution and Time Window, and how they are used
+in the incentives computation process.
+
+\section{Statistics}
+From every solution we retrieve these statistics:
+\begin{itemize}
+	\item \emph{Cost} of the solution, calculated as sum of the travelling time
+		of every driver
+	\item Number of \emph{Drivers} used
+	\item Stats on every Time Window
+		\begin{itemize}
+			\item Time spent inside the time window, divided by \emph{Serving
+				Time} and \emph{Driving Time}\footnote{This value is an
+				underestimation of the real driving time passed inside the time
+				window itself}
+			\item $\emph{Time ratio}\ =\ \frac{Active\ Time}{TW\ Span\ Time}$
+			\item Number of \emph{Clients} served
+			\item Number of \emph{Drivers} passed by
+		\end{itemize}
+	\item Stats on every Driver
+		\begin{itemize}
+			\item Time stats:
+				\begin{itemize}
+					\item \emph{Serving Time}
+					\item \emph{Driving Time}
+					\item \emph{Active Time} = Serving + Driving Time
+					\item \emph{Remaining Time} = Working $-$ Active Time
+					\item $\emph{Time ratio}\ =\ \frac{Active\ Time}{Working\ Time}$
+				\end{itemize}
+			\item Capacity stats:
+				\begin{itemize}
+					\item \emph{Occupied} capacity
+					\item \emph{Remaining} capacity
+					\item $\emph{Capacity Ratio} = \frac{Occupied}{Available}$
+				\end{itemize}
+		\end{itemize}
+\end{itemize}
+
+\section{Quality Factors}
+For computing the \emph{Incentives} of our time windows, we are going to make
+use of two types of \emph{Quality Factors}:
+\begin{description}
+	\item[Solution Quality Factor] \hfill \\
+		This Quality Factor represent the goodness of a Solution, calculated
+		taking in account different values from the solution itself and how good
+		it is exploited
+	\item[Time Window Quality Factor] \hfill \\
+		This describes how good a Time Window is, in respect of the solution
+		based on it and the probability of the starting problem
+\end{description}
+
+\subsection{Solution Quality Factor}
+From the previous statistics we can extract a Solution Quality Factor, based on
+them with exception for the time windows stats.
+
+These last ones statistics are not really interesting if we want to get a
+solution quality factor because we cannot really change them or in any way try
+to influence how the drivers pass in them, they are a fixed input data and these
+statistics are useful only to see how they are being used, nothing more.
+Moreover the TWs that we are using right now are completly random, so it's
+reasonable to see some TWs partially of completly not used: with smart and well
+balanced time windows we can expect an improvement in quality on these values.
+
+The Solution Quality Factor is calculated as follows:
+\begin{equation}
+	\begin{aligned}
+		Q_{S}\ = &\	\alpha \cdot Time\ Cost \cdot Solution\ Cost\ + \\
+				 &\	\beta \cdot Driver\ Cost \cdot Drivers\ + \\
+			 	 &\	\gamma \cdot Driver\ Usage\ Cost \cdot Drivers\ Stats
+	\end{aligned}
+\end{equation}
+having
+\begin{itemize}
+	\item $Solution\ Cost$: cost of the solution
+	\item $Time\ Cost$: cost per minute
+	\item $Drivers$: number of drivers used
+	\item $Driver\ Cost$: cost per driver
+	\item $Drivers\ Stats$: a value indicating how the Drivers have been used,
+		underling how much of their time and capacity are wasted.
+
+		This value is computed as described here:
+		\[Drivers\ Stats\ = \delta\ Capacity\ Ratio + \xi\ Time\ Ratio\]
+		with
+		\\
+		\[Capacity\ Ratio = 
+			\frac
+				{\sum_{i\ in\ Used\ Drivers} Remaining\ Capacity_{i}}
+				{Number\ of\ Drivers}
+		\]
+		\\
+		\[Time\ Ratio =
+			\frac
+				{\sum_{i\ in\ Used\ Drivers} Remaining\ Time_{i}}
+				{Number\ of\ Drivers}
+		\]
+	\item $Driver\ Usage\ Cost$: cost of drivers while not working
+\end{itemize}
+%	Note that every parameter showed in the previous equations
+%	(such as
+%	$\alpha\ \beta\ \gamma\ \delta\ \xi\ $
+%	Time Cost, Driver Cost and Driver Usage Cost)
+%	have to be tested!
+
+The lower the Quality Factor value is, the better the solution will be.
+If we compare two solutions, the best one is the one with the \emph{lower}
+Quality Factor value: this because the Quality Factor is focused on the costs of
+the solution, as showed before.
+
+\subsection{Time Window Quality Factor}
+After calculating the Solution Quality Factors, we are combining them and then
+retrieving the Time Window Quality Factors, one per time windows involved in the
+process.
+
+This Quality Factor is calculated differently from the previous one and it is
+nothing else than the weighted average of the Solution Quality Factors (of the
+current time window) having as weight the probability associated to the
+problem\footnote{There is no need to divide by \(\sum_{p\ in\ P_{t}} prob_{p}\)
+because (by construction) that sum is going to be exactly one.}
+\[Q_{T} = \sum_{s\ in\ S_{t}} prob_{p} \cdot Q_{s} \]
+$p$ is the problem associated to the solution $s$.
+
+\section{Incentives}
+In this section we discuss how we extract the \emph{Incentive} values starting
+from the Time Window Quality Factors.
+
+First of all we order the time windows by their Quality Factor\footnote{Remember
+that the lower the value of Q is, the best it is.} and then we divide them in
+different sets, depending on their quality, in particular:
+\begin{description}
+	\item[Best] \hfill \\
+		Best time window for the current customer
+	\item[Good] \hfill \\ 
+		We are going to save the time windows with a Quality Factor between 0\%
+		and $\eta\%$ from the best solution found
+	\item[Nothing] \hfill \\ 
+		Time windows that do not require much attention: these time windows
+		don't penalize too much the company but they don't even give profit to
+		it
+	\item[Penalty] \hfill \\ 
+		Bad solutions for the company, so if the customer still wants to choose
+		to be served from these time windows, we are going to give him a sort of
+		tax for picking one of the worst solutions. The Quality Factor of these
+		time windows are over a certain threshold $\vartheta$
+\end{description}
+
+Depending on some possibilities, we give our incentives in different ways;
+instead the penalties are always treated in the same way.
+
+\subsection{Penalties}
+We know that the time windows in this set have their quality factor worse than
+$\vartheta\%$ in comparison to the best solution.
+
+The penalty that we assign to these time windows is directly proportional to the
+difference between its quality factor and the average quality factor of every
+time window.
+
+\[Penalty_{t} = BUDGET\ \cdot 
+				5 \cdot 
+				\frac{Quality_{t}\ -\ Avg_{TW}}{Avg_{TW}}
+\]
+
+
+\subsection{Incentives}
+Since the budget has to be splitted between both good and best time windows we
+need a way to divide it properly.
+
+First of all we calculate the average of the good and best\footnote{It's very
+unlikely to find more than one best time window, so calculating also the mean of
+the best time windows is not going to influence the final result.} time windows
+and than we split the budget weighing two times the good part, so the
+best part is going to receive more budget.
+
+\[Best\ Budget\ = BUDGET\ \cdot 
+				  \left( 1 - \frac
+								{ Avg_{Best} }
+								{ Avg_{Best} + 2 \cdot Avg_{Good} }
+				  \right)
+\]
+
+\[Good\ Budget\ = BUDGET\ \cdot 
+				  \left( 1 - \frac
+								{ 2 \cdot Avg_{Good} }
+								{ Avg_{Best} + 2 \cdot Avg_{Good} }
+				  \right)
+\]
+
+Note: the `$1 - \ldots$' part is needed because we are working with Quality
+Factors that are better as long as their value is lower than others.
+
+For both sets we are going to subdivide again the budget between the time
+windows forming each set and, as already done with the penalties, we assign the
+incentives with a direct proportionality law:
+
+\[Good\ Incentive_{t}\ = Good\ Budget \cdot
+						 \left(
+							 1 - \frac{Quality_{t}}{Sum_{Good}}
+						 \right)
+\]
+
+\[Best\ Incentive_{t}\ = Best\ Budget \cdot \frac{Quality_{t}}{Sum_{Best}}
+\]
+
+Note that if there is only one good time window, the previous law will assign to
+it an incentive equal to $0.0$: in this particular case we are going to
+assign the whole good budget to that time window. \\
+
+All of this just described is true only if we have at least one good time
+window, otherwise we are just going to give an incentive to the best time window
+directly from the whole budget, as described by this equation:
+
+\[Best\ Incentive_{t}\ = \frac{Budget}{2} \cdot \frac{Quality_{t}}{Sum_{Best}}
+\]
+
+In this case we decided to not assign all the budget but only a part of it
+because, since we only have one time window that will receive an incentive, it
+seems too much giving all the budget to it and, according also to \emph{Campbell
+and Savelsbergh, 2005}, incentives don't need to have high values to pay off.
+
+\section{Parameters}
+After some tests and reasoning, we decided to set the parameters to the
+following values:
+\begin{description}
+	\item[\emph{$\alpha$}] = 0.5 \hfill \\
+		High emphasis on the solution cost
+	\item[\emph{$\beta$}] = 0.1 \hfill \\
+		Not caring too much about how many drivers are required, but
+	\item[\emph{$\gamma$}] = $1-\alpha-\beta$ = 0.4 \hfill \\
+		Caring how bad the drivers required are used
+	\item[\emph{$\delta$}] = 0.5
+	\item[\emph{$\xi$}] = $1-\delta$ = 0.5 \hfill \\
+		Same weight on how the drivers are used, divided between capacity and
+		time not used ratio
+	\item[\emph{Cost Driver}] = 50.0 \hfill \\
+		Renting cost of a new driver
+	\item[\emph{Cost Driver Usage}] = 10.0 \hfill \\
+		Cost of time not used for each driver
+	\item[\emph{Cost Time}] = 20.0 \hfill \\
+		Cost of time when drivers are working
+	\item[\emph{$\vartheta$}] = 0.05 \hfill \\
+		Penalty threshold over which we are going to assign a penalty
+	\item[\emph{$\eta$}] = 0.02 \hfill \\
+		Good threshold: this time window deserve an incentive because they are
+		almost as good as the best one
+	
+\end{description}
+
+\end{document}
