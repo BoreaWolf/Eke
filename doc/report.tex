@@ -1,10 +1,20 @@
 % Riccardo Orizio
-% 7 January 2016
-% Description of the quality factor of every solution
+% 9 April 2016
+% Network Security report of EKE
+% Requested content:
+%  - The protocol requirements, in terms of security, network (which transport
+%    layer? why?), terminals, servers, credential databases, etc.
+%  - The actual protocol rules, including one successful and at least one
+%    unsuccessful run.
+%  - An analysis of how the protocol satisfies the requirements set out by point
+%    (1) above.
+
 
 \documentclass[10pt, letterpaper]{article}
 
 \usepackage[utf8]{inputenc}
+\usepackage[italian]{babel}
+\usepackage{textcomp}
 \usepackage{mathtools}
 \usepackage{amsmath}
 \usepackage{amssymb}
@@ -15,269 +25,101 @@
 \usepackage{float}
 
 % Every list item will start with a dash instead of a dot
-% \def\labelitemi{--}
+\def\labelitemi{-}
 
 % Personal commands
-% Highlighting text with different colors
-\newcommand{\hlc}[2]{\sethlcolor{#1} \hl{#2}}
-\newcommand{\news}[1]{\hlc{green}{#1}}
-\newcommand{\todelete}[1]{\hlc{red}{#1}}
-\newcommand{\extras}[1]{\newline\fbox{\parbox{\textwidth}{\hlc{orange}{#1}}}\newline}
-\newcommand{\todo}[1]{\hlc{Emerald}{TODO:#1}}
 
-\title{Quality Factors and Incentives}
+% Title
+\title{Protocollo di autenticazione EKE:\\ progetto di Network Security}
 \author{Riccardo Orizio}
-\date{7 January 2016}
+\date{9 Aprile 2016}
 
 \begin{document}
 
 \maketitle
 
 \section{Abstract}
-Description of Quality Factors, Solution and Time Window, and how they are used
-in the incentives computation process.
+Nel documento verrà brevemente descritto il protocollo EKE, le sue
+caratteristiche e limitazioni e come è stato implementato in questo progetto.
 
-\section{Statistics}
-From every solution we retrieve these statistics:
+\section{Requisiti del protocollo}
+L'idea dalla quale è nato il protocollo di autenticazione EKE è data dalla
+mancanza di autenticazione, sia singola sia mutua, dell'algoritmo per la
+creazione di una chiave di sessione effimera Diffie-Hellman.
+
+Tale algoritmo consente a due entità di creare una chiave di sessione temporanea
+da zero, senza la necessità di conoscere alcun tipo di informazione aggiuntiva
+riguardante l'altro interlocutore.
+L'algoritmo è semplice, basato sullo scambio di tre pacchetti nei quali vengono
+scambiate le informazioni necessarie per la generazione della chiave da parte di
+entrambi i client, ovvero:
 \begin{itemize}
-	\item \emph{Cost} of the solution, calculated as sum of the travelling time
-		of every driver
-	\item Number of \emph{Drivers} used
-	\item Stats on every Time Window
-		\begin{itemize}
-			\item Time spent inside the time window, divided by \emph{Serving
-				Time} and \emph{Driving Time}\footnote{This value is an
-				underestimation of the real driving time passed inside the time
-				window itself}
-			\item $\emph{Time ratio}\ =\ \frac{Active\ Time}{TW\ Span\ Time}$
-			\item Number of \emph{Clients} served
-			\item Number of \emph{Drivers} passed by
-		\end{itemize}
-	\item Stats on every Driver
-		\begin{itemize}
-			\item Time stats:
-				\begin{itemize}
-					\item \emph{Serving Time}
-					\item \emph{Driving Time}
-					\item \emph{Active Time} = Serving + Driving Time
-					\item \emph{Remaining Time} = Working $-$ Active Time
-					\item $\emph{Time ratio}\ =\ \frac{Active\ Time}{Working\ Time}$
-				\end{itemize}
-			\item Capacity stats:
-				\begin{itemize}
-					\item \emph{Occupied} capacity
-					\item \emph{Remaining} capacity
-					\item $\emph{Capacity Ratio} = \frac{Occupied}{Available}$
-				\end{itemize}
-		\end{itemize}
+	\item \textbf{p}: un numero primo
+	\item \textbf{g}: un generatore di $Z_p^*$
+	\item \textbf{$T_{a/b}$}: parte della chiave effimera
 \end{itemize}
+Grazie al teorema di Eulero, entrambi i client sono in grado di derivare la
+stessa chiave effimera seppur solamente parte della chiave viene scambiata.
+Il problema legato a questo algoritmo è la mancanza di autenticazione che lo
+rende soggetto al Man-in-the-middle attack: Trudy può semplicemente rigirare le
+richieste ricevute da Alice a Bob ed utilizzare le sue risposte per creare una
+chiave effimera con Alice senza problemi.
+Per questo EKE introduce l'autenticazione, basandosi su una password conosciuta
+da entrambi i client e una coppia di challenge, che permette di limitare questo
+tipo di attacco e garantisce inoltre una mutua autenticazione.
+La password condivisa dai client è importante per i primi messaggi, ma anche nel
+caso in cui essa venisse recuperata, le uniche informazioni alla quali si
+avrebbero accesso sarebbero dei valori numerici di poca utilità.
 
-\section{Quality Factors}
-For computing the \emph{Incentives} of our time windows, we are going to make
-use of two types of \emph{Quality Factors}:
-\begin{description}
-	\item[Solution Quality Factor] \hfill \\
-		This Quality Factor represent the goodness of a Solution, calculated
-		taking in account different values from the solution itself and how good
-		it is exploited
-	\item[Time Window Quality Factor] \hfill \\
-		This describes how good a Time Window is, in respect of the solution
-		based on it and the probability of the starting problem
-\end{description}
+Per poter eseguire il protocollo è quindi necessario conoscere esclusivamente
+una \textit{password} condivisa tra i client, o con un server\footnote{In questo
+caso il server avrebbe tutte le password di tutti i client salvate in chiaro in
+un database}, che vogliono autenticarsi e che tutti i client abbiano un nome
+univoco all'interno della rete nella quale si stanno autenticando.
 
-\subsection{Solution Quality Factor}
-From the previous statistics we can extract a Solution Quality Factor, based on
-them with exception for the time windows stats.
-
-These last ones statistics are not really interesting if we want to get a
-solution quality factor because we cannot really change them or in any way try
-to influence how the drivers pass in them, they are a fixed input data and these
-statistics are useful only to see how they are being used, nothing more.
-Moreover the TWs that we are using right now are completly random, so it's
-reasonable to see some TWs partially of completly not used: with smart and well
-balanced time windows we can expect an improvement in quality on these values.
-
-The Solution Quality Factor is calculated as follows:
-\begin{equation}
-	\begin{aligned}
-		Q_{S}\ = &\	\alpha \cdot Time\ Cost \cdot Solution\ Cost\ + \\
-				 &\	\beta \cdot Driver\ Cost \cdot Drivers\ + \\
-			 	 &\	\gamma \cdot Driver\ Usage\ Cost \cdot Drivers\ Stats
-	\end{aligned}
-\end{equation}
-having
+\section{Il protocollo}
+Il protocollo si basa sullo scambio di quattro pacchetti totali nella quale
+viene generata la chiave effimera ed entrambi i client si autenticano a vicenda.
+La sequenza dei messaggi scambiati è la seguente, sapendo che entrambi conoscono
+la password e di conseguenza conoscono il valore $w=f(pwd)$:
 \begin{itemize}
-	\item $Solution\ Cost$: cost of the solution
-	\item $Time\ Cost$: cost per minute
-	\item $Drivers$: number of drivers used
-	\item $Driver\ Cost$: cost per driver
-	\item $Drivers\ Stats$: a value indicating how the Drivers have been used,
-		underling how much of their time and capacity are wasted.
-
-		This value is computed as described here:
-		\[Drivers\ Stats\ = \delta\ Capacity\ Ratio + \xi\ Time\ Ratio\]
-		with
-		\\
-		\[Capacity\ Ratio = 
-			\frac
-				{\sum_{i\ in\ Used\ Drivers} Remaining\ Capacity_{i}}
-				{Number\ of\ Drivers}
-		\]
-		\\
-		\[Time\ Ratio =
-			\frac
-				{\sum_{i\ in\ Used\ Drivers} Remaining\ Time_{i}}
-				{Number\ of\ Drivers}
-		\]
-	\item $Driver\ Usage\ Cost$: cost of drivers while not working
+	\item \textbf{Client\textrightarrow Server}: {[} ClientID, A, g, p {]}
+		\begin{description}
+			\item [ClientID:] Identificativo del client
+			\item [A:] $E_w( g^{S_a} \mod p ) = E_w( T_a )$
+			\item [g:] Generatore di $Z_p^*$
+			\item [p:] Numero primo scelto casualmente dal client
+		\end{description}
+	\item \textbf{Server\textrightarrow Client}: {[} ServerID, B {]}
+		\begin{description}
+			\item [ServerID:] Identificativo del server (o secondo client)
+			\item [B:] $E_w( g^{S_b} \mod p, c_1 ) = E_w( T_b, c_1 )$
+		\end{description}
+	\item \textbf{Client\textrightarrow Server} $[E_k( c_1, c_2 )]$
+		\begin{description}
+			\item [k:] chiave effimera $= T_b^{S_a} \mod p$
+		\end{description}
+	\item \textbf{Server\textrightarrow Client} $[E_k( c_2 )]$
+		\begin{description}
+			\item [k:] chiave effimera $= T_a^{S_b} \mod p$
+		\end{description}
 \end{itemize}
-%	Note that every parameter showed in the previous equations
-%	(such as
-%	$\alpha\ \beta\ \gamma\ \delta\ \xi\ $
-%	Time Cost, Driver Cost and Driver Usage Cost)
-%	have to be tested!
+$S_a$ ed $S_b$ sono numeri casuali scelti nell'intervallo $[1,p)$,
+rispettivamente calcolati dal client e dal server; $c_1$ e $c_2$ sono numeri
+casuali usati come challenge per ottenere la mutua autenticazione tra i due
+interlocutori.
+Errori di comunicazione possono sorgere quando i due client hanno una diversa
+password condivisa, di conseguenza non sono in grado di generare la stessa
+chiave effimera e le challenge non verranno verificate a causa della sbagliata
+decifrazione dei valori scambiati.
 
-The lower the Quality Factor value is, the better the solution will be.
-If we compare two solutions, the best one is the one with the \emph{lower}
-Quality Factor value: this because the Quality Factor is focused on the costs of
-the solution, as showed before.
-
-\subsection{Time Window Quality Factor}
-After calculating the Solution Quality Factors, we are combining them and then
-retrieving the Time Window Quality Factors, one per time windows involved in the
-process.
-
-This Quality Factor is calculated differently from the previous one and it is
-nothing else than the weighted average of the Solution Quality Factors (of the
-current time window) having as weight the probability associated to the
-problem\footnote{There is no need to divide by \(\sum_{p\ in\ P_{t}} prob_{p}\)
-because (by construction) that sum is going to be exactly one.}
-\[Q_{T} = \sum_{s\ in\ S_{t}} prob_{p} \cdot Q_{s} \]
-$p$ is the problem associated to the solution $s$.
-
-\section{Incentives}
-In this section we discuss how we extract the \emph{Incentive} values starting
-from the Time Window Quality Factors.
-
-First of all we order the time windows by their Quality Factor\footnote{Remember
-that the lower the value of Q is, the best it is.} and then we divide them in
-different sets, depending on their quality, in particular:
-\begin{description}
-	\item[Best] \hfill \\
-		Best time window for the current customer
-	\item[Good] \hfill \\ 
-		We are going to save the time windows with a Quality Factor between 0\%
-		and $\eta\%$ from the best solution found
-	\item[Nothing] \hfill \\ 
-		Time windows that do not require much attention: these time windows
-		don't penalize too much the company but they don't even give profit to
-		it
-	\item[Penalty] \hfill \\ 
-		Bad solutions for the company, so if the customer still wants to choose
-		to be served from these time windows, we are going to give him a sort of
-		tax for picking one of the worst solutions. The Quality Factor of these
-		time windows are over a certain threshold $\vartheta$
-\end{description}
-
-Depending on some possibilities, we give our incentives in different ways;
-instead the penalties are always treated in the same way.
-
-\subsection{Penalties}
-We know that the time windows in this set have their quality factor worse than
-$\vartheta\%$ in comparison to the best solution.
-
-The penalty that we assign to these time windows is directly proportional to the
-difference between its quality factor and the average quality factor of every
-time window.
-
-\[Penalty_{t} = BUDGET\ \cdot 
-				5 \cdot 
-				\frac{Quality_{t}\ -\ Avg_{TW}}{Avg_{TW}}
-\]
-
-
-\subsection{Incentives}
-Since the budget has to be splitted between both good and best time windows we
-need a way to divide it properly.
-
-First of all we calculate the average of the good and best\footnote{It's very
-unlikely to find more than one best time window, so calculating also the mean of
-the best time windows is not going to influence the final result.} time windows
-and than we split the budget weighing two times the good part, so the
-best part is going to receive more budget.
-
-\[Best\ Budget\ = BUDGET\ \cdot 
-				  \left( 1 - \frac
-								{ Avg_{Best} }
-								{ Avg_{Best} + 2 \cdot Avg_{Good} }
-				  \right)
-\]
-
-\[Good\ Budget\ = BUDGET\ \cdot 
-				  \left( 1 - \frac
-								{ 2 \cdot Avg_{Good} }
-								{ Avg_{Best} + 2 \cdot Avg_{Good} }
-				  \right)
-\]
-
-Note: the `$1 - \ldots$' part is needed because we are working with Quality
-Factors that are better as long as their value is lower than others.
-
-For both sets we are going to subdivide again the budget between the time
-windows forming each set and, as already done with the penalties, we assign the
-incentives with a direct proportionality law:
-
-\[Good\ Incentive_{t}\ = Good\ Budget \cdot
-						 \left(
-							 1 - \frac{Quality_{t}}{Sum_{Good}}
-						 \right)
-\]
-
-\[Best\ Incentive_{t}\ = Best\ Budget \cdot \frac{Quality_{t}}{Sum_{Best}}
-\]
-
-Note that if there is only one good time window, the previous law will assign to
-it an incentive equal to $0.0$: in this particular case we are going to
-assign the whole good budget to that time window. \\
-
-All of this just described is true only if we have at least one good time
-window, otherwise we are just going to give an incentive to the best time window
-directly from the whole budget, as described by this equation:
-
-\[Best\ Incentive_{t}\ = \frac{Budget}{2} \cdot \frac{Quality_{t}}{Sum_{Best}}
-\]
-
-In this case we decided to not assign all the budget but only a part of it
-because, since we only have one time window that will receive an incentive, it
-seems too much giving all the budget to it and, according also to \emph{Campbell
-and Savelsbergh, 2005}, incentives don't need to have high values to pay off.
-
-\section{Parameters}
-After some tests and reasoning, we decided to set the parameters to the
-following values:
-\begin{description}
-	\item[\emph{$\alpha$}] = 0.5 \hfill \\
-		High emphasis on the solution cost
-	\item[\emph{$\beta$}] = 0.1 \hfill \\
-		Not caring too much about how many drivers are required, but
-	\item[\emph{$\gamma$}] = $1-\alpha-\beta$ = 0.4 \hfill \\
-		Caring how bad the drivers required are used
-	\item[\emph{$\delta$}] = 0.5
-	\item[\emph{$\xi$}] = $1-\delta$ = 0.5 \hfill \\
-		Same weight on how the drivers are used, divided between capacity and
-		time not used ratio
-	\item[\emph{Cost Driver}] = 50.0 \hfill \\
-		Renting cost of a new driver
-	\item[\emph{Cost Driver Usage}] = 10.0 \hfill \\
-		Cost of time not used for each driver
-	\item[\emph{Cost Time}] = 20.0 \hfill \\
-		Cost of time when drivers are working
-	\item[\emph{$\vartheta$}] = 0.05 \hfill \\
-		Penalty threshold over which we are going to assign a penalty
-	\item[\emph{$\eta$}] = 0.02 \hfill \\
-		Good threshold: this time window deserve an incentive because they are
-		almost as good as the best one
-	
-\end{description}
+\section{Analisi}
+EKE garantisce una doppia autenticazione grazie alla doppia challenge scambiata
+tra i due utenti, i quali procedono con l'utilizzo della chiave effimera
+solamente se i valori decifrati ricevuti coincidono con quelli generati.
+Inoltre siamo protetti da eventuali dictionary attacks, indipendentemente dal
+fatto che siano on-line od off-line, in quanto le informazioni che si riescono a
+ricavare sono solamente dei numeri computazionalmente difficili da utilizzare
+per poter ricavare la chiave effimera.
 
 \end{document}
