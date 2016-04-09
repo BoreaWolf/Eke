@@ -18,11 +18,6 @@
 \usepackage{mathtools}
 \usepackage{amsmath}
 \usepackage{amssymb}
-\usepackage{color,soul}
-\usepackage[usenames,dvipsnames]{xcolor}
-\usepackage{graphicx}
-\graphicspath{ {../images/} }
-\usepackage{float}
 
 % Every list item will start with a dash instead of a dot
 \def\labelitemi{-}
@@ -32,57 +27,55 @@
 % Title
 \title{Protocollo di autenticazione EKE:\\ progetto di Network Security}
 \author{Riccardo Orizio}
-\date{9 Aprile 2016}
+\date{A.A. 2015-2016}
 
 \begin{document}
 
 \maketitle
 
-\section{Abstract}
-Nel documento verrà brevemente descritto il protocollo EKE, le sue
-caratteristiche e limitazioni e come è stato implementato in questo progetto.
-
 \section{Requisiti del protocollo}
 L'idea dalla quale è nato il protocollo di autenticazione EKE è data dalla
-mancanza di autenticazione, sia singola sia mutua, dell'algoritmo per la
-creazione di una chiave di sessione effimera Diffie-Hellman.
+mancanza di qualsiasi tipo di autenticazione, singola e mutua, dell'algoritmo
+Diffie-Hellman, il quale scopo è la generazione di una chiave di sessione
+effimera.
 
 Tale algoritmo consente a due entità di creare una chiave di sessione temporanea
 da zero, senza la necessità di conoscere alcun tipo di informazione aggiuntiva
 riguardante l'altro interlocutore.
-L'algoritmo è semplice, basato sullo scambio di tre pacchetti nei quali vengono
-scambiate le informazioni necessarie per la generazione della chiave da parte di
-entrambi i client, ovvero:
+L'algoritmo è semplice, basato sulla trasmissione di tre pacchetti nei quali
+vengono scambiate le informazioni necessarie per la generazione della chiave da
+parte di entrambi i client, ovvero:
 \begin{itemize}
 	\item \textbf{p}: un numero primo
 	\item \textbf{g}: un generatore di $Z_p^*$
-	\item \textbf{$T_{a/b}$}: parte della chiave effimera
+	\item \textbf{$T_{a/b}$}: chiave effimera parziale
 \end{itemize}
 Grazie al teorema di Eulero, entrambi i client sono in grado di derivare la
-stessa chiave effimera seppur solamente parte della chiave viene scambiata.
+stessa chiave effimera, seppur solamente parte della chiave viene scambiata.
 Il problema legato a questo algoritmo è la mancanza di autenticazione che lo
-rende soggetto al Man-in-the-middle attack: Trudy può semplicemente rigirare le
+rende soggetto al man-in-the-middle attack: Trudy può semplicemente rigirare le
 richieste ricevute da Alice a Bob ed utilizzare le sue risposte per creare una
 chiave effimera con Alice senza problemi.
-Per questo EKE introduce l'autenticazione, basandosi su una password conosciuta
-da entrambi i client e una coppia di challenge, che permette di limitare questo
-tipo di attacco e garantisce inoltre una mutua autenticazione.
-La password condivisa dai client è importante per i primi messaggi, ma anche nel
-caso in cui essa venisse recuperata, le uniche informazioni alla quali si
-avrebbero accesso sarebbero dei valori numerici di poca utilità.
+Per questi motivi EKE introduce l'autenticazione basata su una password
+conosciuta da entrambi i client e una coppia di challenge, i quali permettono di
+limitare il man-in-the-middle attack e garantire inoltre mutua autenticazione.
+La password condivisa dai client è importante per i primi messaggi, ma nel
+malaugurato caso in cui essa venisse recuperata da terzi, le uniche informazioni
+alla quali si avrebbero accesso sarebbero dei valori numerici di poca utilità.
 
 Per poter eseguire il protocollo è quindi necessario conoscere esclusivamente
-una \textit{password} condivisa tra i client, o con un server\footnote{In questo
+una \textit{password} condivisa tra i client che vogliono comunicare in una
+sessione protetta da una chiave effimera, o con un server\footnote{In questo
 caso il server avrebbe tutte le password di tutti i client salvate in chiaro in
-un database}, che vogliono autenticarsi e che tutti i client abbiano un nome
-univoco all'interno della rete nella quale si stanno autenticando.
+un database}, che tutti i client abbiano un nome univoco all'interno della rete
+nella quale il protocollo è attivo.
 
 \section{Il protocollo}
 Il protocollo si basa sullo scambio di quattro pacchetti totali nella quale
 viene generata la chiave effimera ed entrambi i client si autenticano a vicenda.
 La sequenza dei messaggi scambiati è la seguente, sapendo che entrambi conoscono
 la password e di conseguenza conoscono il valore $w=f(pwd)$:
-\begin{itemize}
+\begin{enumerate}
 	\item \textbf{Client\textrightarrow Server}: {[} ClientID, A, g, p {]}
 		\begin{description}
 			\item [ClientID:] Identificativo del client
@@ -103,15 +96,22 @@ la password e di conseguenza conoscono il valore $w=f(pwd)$:
 		\begin{description}
 			\item [k:] chiave effimera $= T_a^{S_b} \mod p$
 		\end{description}
-\end{itemize}
+\end{enumerate}
 $S_a$ ed $S_b$ sono numeri casuali scelti nell'intervallo $[1,p)$,
 rispettivamente calcolati dal client e dal server; $c_1$ e $c_2$ sono numeri
 casuali usati come challenge per ottenere la mutua autenticazione tra i due
 interlocutori.
+
 Errori di comunicazione possono sorgere quando i due client hanno una diversa
 password condivisa, di conseguenza non sono in grado di generare la stessa
 chiave effimera e le challenge non verranno verificate a causa della sbagliata
 decifrazione dei valori scambiati.
+
+La funzione $f$ è un \textit{MDC} mentre $E$ può essere un qualsiasi algoritmo
+di cifratura simmetrico o asimmetrico (ovviamente per la cifratura basata sulla
+chiave effimera generata l'algoritmo scelto dovrà essere simmetrico).
+Nel progetto sono stati usati rispettivamente l'algoritmo \textit{SHA-1} e
+\textit{AES-128}.
 
 \section{Analisi}
 EKE garantisce una doppia autenticazione grazie alla doppia challenge scambiata
